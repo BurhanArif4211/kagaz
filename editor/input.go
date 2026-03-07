@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"unicode"
+
 	"fyne.io/fyne/v2"
 )
 
@@ -38,44 +40,97 @@ func (e *NoteEditor) DragEnd() {
 	// Nothing needed; selection remains.
 }
 
-// TappedSecondary (long press) shows a context menu.
+// TappedSecondary (long press) selects the word under the finger and shows the context menu.
 func (e *NoteEditor) TappedSecondary(ev *fyne.PointEvent) {
-	// Find word under tap
+	// Get the character position under the tap
 	row, col := e.grid.CursorLocationForPosition(ev.Position)
 	pos := e.rowColToIndex(row, col)
 
-	// Expand to word boundaries (simplified: select the whole line for demo)
-	lines := e.doc.Lines()
-	lineIdx, _ := e.indexToLineCol(pos)
-	if lineIdx >= 0 && lineIdx < len(lines) {
-		line := lines[lineIdx]
-		start := e.lineColToIndex(lineIdx, 0)
-		end := e.lineColToIndex(lineIdx, len(line))
+	// Expand to word boundaries
+	start, end := e.expandToWord(pos)
+	if start < end {
 		e.selStart, e.selEnd = start, end
-		e.Refresh()
+		e.cursor = end // optional: place cursor at end of selection
+	} else {
+		// If no word, just place cursor (should not happen on long press, but fallback)
+		e.selStart, e.selEnd = -1, -1
+		e.cursor = pos
 	}
 
-	// Show a popup (stub)
-	// In a real app, use widget.NewPopUpMenu(...)
+	e.Refresh()
+
+	// Show context menu
+	e.showContextMenu(ev.AbsolutePosition)
+}
+
+// expandToWord returns the start and end indices of the word containing pos.
+// Returns pos, pos if no word found.
+func (e *NoteEditor) expandToWord(pos int) (int, int) {
+	lines := e.doc.Lines()
+	if len(lines) == 0 {
+		return pos, pos
+	}
+
+	lineIdx, col := e.indexToLineCol(pos)
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return pos, pos
+	}
+
+	line := lines[lineIdx]
+	if col < 0 || col > len(line) {
+		return pos, pos
+	}
+
+	// Find word start (backwards until non-letter/digit or line start)
+	start := col
+	for start > 0 && (unicode.IsLetter(rune(line[start-1])) || unicode.IsDigit(rune(line[start-1]))) {
+		start--
+	}
+
+	// Find word end (forwards until non-letter/digit or line end)
+	end := col
+	for end < len(line) && (unicode.IsLetter(rune(line[end])) || unicode.IsDigit(rune(line[end]))) {
+		end++
+	}
+
+	// Convert to absolute indices
+	absStart := e.lineColToIndex(lineIdx, start)
+	absEnd := e.lineColToIndex(lineIdx, end)
+
+	return absStart, absEnd
 }
 
 // Helper: convert grid row/col to absolute character index.
 func (e *NoteEditor) rowColToIndex(row, col int) int {
 	lines := e.doc.Lines()
-	if row < 0 || row >= len(lines) {
-		// Out of bounds – return last valid position
-		return e.doc.len()
+	if len(lines) == 0 {
+		return 0
 	}
-	// Sum lengths of previous lines + col
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(lines) {
+		// return total length
+		total := 0
+		for _, line := range lines {
+			total += len(line) + 1
+		}
+		if total > 0 {
+			total-- // last newline? but we want last char index
+		}
+		return total
+	}
 	idx := 0
 	for i := 0; i < row; i++ {
-		idx += len(lines[i]) + 1 // +1 for newline character
+		idx += len(lines[i]) + 1
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col > len(lines[row]) {
+		col = len(lines[row])
 	}
 	idx += col
-	// Ensure col not beyond line length
-	if col > len(lines[row]) {
-		idx = idx - col + len(lines[row]) // clamp to line end
-	}
 	return idx
 }
 
@@ -87,36 +142,47 @@ func (e *NoteEditor) indexToRowCol() (row, col int) {
 // Helper: convert absolute index to row/col for any position.
 func (e *NoteEditor) indexToRowColFor(pos int) (row, col int) {
 	lines := e.doc.Lines()
+	if len(lines) == 0 {
+		return 0, 0
+	}
+	if pos < 0 {
+		pos = 0
+	}
 	remaining := pos
 	for i, line := range lines {
 		lineLen := len(line)
 		if remaining <= lineLen {
 			return i, remaining
 		}
-		remaining -= lineLen + 1 // +1 for newline
+		remaining -= lineLen + 1
 	}
-	// Beyond end: return last line end
-	if len(lines) == 0 {
-		return 0, 0
-	}
-	lastLine := lines[len(lines)-1]
-	return len(lines) - 1, len(lastLine)
+	lastRow := len(lines) - 1
+	return lastRow, len(lines[lastRow])
 }
 
 // Helper: convert line index and column to absolute index.
 func (e *NoteEditor) lineColToIndex(line, col int) int {
 	lines := e.doc.Lines()
-	if line < 0 || line >= len(lines) {
-		return e.doc.len()
+	if len(lines) == 0 {
+		return 0
+	}
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(lines) {
+		line = len(lines) - 1
 	}
 	idx := 0
 	for i := 0; i < line; i++ {
 		idx += len(lines[i]) + 1
 	}
-	idx += col
-	if col > len(lines[line]) {
-		idx = idx - col + len(lines[line])
+	if col < 0 {
+		col = 0
 	}
+	if col > len(lines[line]) {
+		col = len(lines[line])
+	}
+	idx += col
 	return idx
 }
 

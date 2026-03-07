@@ -2,34 +2,44 @@ package editor
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-// NoteEditor is the custom text editing widget.
 type NoteEditor struct {
 	widget.BaseWidget
 	doc      *Document
 	grid     *widget.TextGrid
-	cursor   int // absolute character index
-	selStart int // -1 if no selection
+	cursor   int
+	selStart int
 	selEnd   int
 
 	// Cached row/col for rendering
 	cursorRow, cursorCol     int
 	selStartRow, selStartCol int
 	selEndRow, selEndCol     int
+
+	// Handle positions (relative to editor)
+	handleStartPos fyne.Position
+	handleEndPos   fyne.Position
+	showHandles    bool
+
+	draggingHandle int // 0=none, 1=start, 2=end
 }
 
-// NewNoteEditor creates a new editor with empty content.
+const handleRadius = 20 // pixels for hit detection
+
 func NewNoteEditor() *NoteEditor {
 	e := &NoteEditor{
-		doc:      NewDocument(),
-		grid:     widget.NewTextGrid(),
-		cursor:   0,
-		selStart: -1,
-		selEnd:   -1,
+		doc:            NewDocument(),
+		grid:           widget.NewTextGrid(),
+		cursor:         0,
+		selStart:       -1,
+		selEnd:         -1,
+		draggingHandle: 0,
 	}
-	e.grid.Scroll = fyne.ScrollBoth // enable scrolling
+	e.grid.Scroll = fyne.ScrollBoth
 	e.ExtendBaseWidget(e)
 	return e
 }
@@ -43,9 +53,25 @@ func (e *NoteEditor) SetContent(segments []TextSegment) {
 	e.Refresh()
 }
 
-// CreateRenderer implements fyne.Widget.
 func (e *NoteEditor) CreateRenderer() fyne.WidgetRenderer {
-	return &noteEditorRenderer{editor: e, grid: e.grid}
+	handleStart := canvas.NewCircle(theme.PrimaryColor())
+	handleStart.StrokeWidth = 2
+	handleStart.StrokeColor = theme.BackgroundColor()
+	handleStart.Resize(fyne.NewSize(handleRadius, handleRadius))
+	handleStart.Hide()
+
+	handleEnd := canvas.NewCircle(theme.PrimaryColor())
+	handleEnd.StrokeWidth = 2
+	handleEnd.StrokeColor = theme.BackgroundColor()
+	handleEnd.Resize(fyne.NewSize(handleRadius, handleRadius))
+	handleEnd.Hide()
+
+	return &noteEditorRenderer{
+		editor:      e,
+		grid:        e.grid,
+		handleStart: handleStart,
+		handleEnd:   handleEnd,
+	}
 }
 
 // Focus handling
@@ -140,27 +166,27 @@ func (e *NoteEditor) moveCursor(delta int, ev *fyne.KeyEvent) {
 	}
 
 	// If shift is held, adjust selection.
-	// if ev.Modifier&fyne.ShiftModifier != 0 {
-	// 	if e.selStart < 0 {
-	// 		// Start new selection
-	// 		e.selStart = e.cursor
-	// 		e.selEnd = newPos
-	// 	} else {
-	// 		// Extend selection
-	// 		if newPos < e.selStart {
-	// 			e.selStart = newPos
-	// 		} else if newPos > e.selEnd {
-	// 			e.selEnd = newPos
-	// 		} else {
-	// 			// If moving inside selection, maybe shrink? We'll keep simple: just move cursor and keep selection.
-	// 			// For now, we'll just update cursor without changing selection.
-	// 		}
-	// 	}
-	// } else {
-	// No shift: clear selection
-	e.selStart = -1
-	e.selEnd = -1
-
+	if fyne.KeyModifier(ev.Physical.ScanCode) == fyne.KeyModifierShift {
+		if e.selStart < 0 {
+			// Start new selection
+			e.selStart = e.cursor
+			e.selEnd = newPos
+		} else {
+			// Extend selection
+			if newPos < e.selStart {
+				e.selStart = newPos
+			} else if newPos > e.selEnd {
+				e.selEnd = newPos
+			} else {
+				// If moving inside selection, maybe shrink? We'll keep simple: just move cursor and keep selection.
+				// For now, we'll just update cursor without changing selection.
+			}
+		}
+	} else {
+		// No shift: clear selection
+		e.selStart = -1
+		e.selEnd = -1
+	}
 	e.cursor = newPos
 	e.Refresh()
 }
@@ -189,22 +215,22 @@ func (e *NoteEditor) moveCursorLine(delta int, ev *fyne.KeyEvent) {
 	newPos := e.lineColToIndex(newLine, col)
 
 	// Handle shift similar to moveCursor
-	// if ev.Modifier&fyne.ShiftModifier != 0 {
-	// 	if e.selStart < 0 {
-	// 		e.selStart = e.cursor
-	// 		e.selEnd = newPos
-	// 	} else {
-	// 		// Extend selection appropriately; we'll keep simple for now
-	// 		if newPos < e.selStart {
-	// 			e.selStart = newPos
-	// 		} else if newPos > e.selEnd {
-	// 			e.selEnd = newPos
-	// 		}
-	// 	}
-	// } else {
-	e.selStart = -1
-	e.selEnd = -1
-
+	if fyne.KeyModifier(ev.Physical.ScanCode) == fyne.KeyModifierShift {
+		if e.selStart < 0 {
+			e.selStart = e.cursor
+			e.selEnd = newPos
+		} else {
+			// Extend selection appropriately; we'll keep simple for now
+			if newPos < e.selStart {
+				e.selStart = newPos
+			} else if newPos > e.selEnd {
+				e.selEnd = newPos
+			}
+		}
+	} else {
+		e.selStart = -1
+		e.selEnd = -1
+	}
 	e.cursor = newPos
 	e.Refresh()
 }

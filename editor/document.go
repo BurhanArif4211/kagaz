@@ -50,6 +50,7 @@ func (d *Document) InsertText(pos int, text string, style TextStyle) int {
 		segIdx++ // now points to 'after'? Actually after is at segIdx+1, we need to insert new text between.
 		// Insert the new text as a separate segment between before and after.
 		newSeg := TextSegment{Text: text, Style: style}
+
 		d.segments = append(d.segments[:segIdx], append([]TextSegment{newSeg}, d.segments[segIdx:]...)...)
 	} else {
 		// Insertion at the end of the segment: just add a new segment after it.
@@ -110,6 +111,11 @@ func (d *Document) DeleteRange(start, end int) {
 		}
 		currentPos = segEnd
 	}
+
+	if len(newSegs) == 0 {
+		newSegs = []TextSegment{{Text: "", Style: TextStyle{}}}
+	}
+	d.segments = newSegs
 	d.segments = newSegs
 	d.mergeSegments()
 }
@@ -122,6 +128,9 @@ func (d *Document) ApplyStyle(start, end int, fn func(*TextStyle)) {
 
 // Helper: find segment index and offset within that segment for a given character position.
 func (d *Document) findSegmentAndOffset(pos int) (int, int) {
+	if len(d.segments) == 0 {
+		return 0, 0
+	}
 	if pos < 0 {
 		return 0, 0
 	}
