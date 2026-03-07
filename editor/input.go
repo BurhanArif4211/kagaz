@@ -9,6 +9,9 @@ func (e *NoteEditor) Tapped(ev *fyne.PointEvent) {
 	row, col := e.grid.CursorLocationForPosition(ev.Position)
 	e.cursor = e.rowColToIndex(row, col)
 	e.selStart = -1 // clear selection
+	if c := fyne.CurrentApp().Driver().CanvasForObject(e); c != nil {
+		c.Focus(e)
+	}
 	e.Refresh()
 }
 
