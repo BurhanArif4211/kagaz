@@ -115,16 +115,19 @@ func (r *noteEditorRenderer) updateHandles() {
 	startPos := r.grid.PositionForCursorLocation(r.editor.selStartRow, r.editor.selStartCol)
 	endPos := r.grid.PositionForCursorLocation(r.editor.selEndRow, r.editor.selEndCol)
 
-	// Center of the cell (assuming cell size is roughly 20x20)
+	// Center of the cell
 	// We don't have cell size, so we'll just use top-left plus a small offset.
 	// For better accuracy, we could measure text size, but this is fine for hit detection.
 	cellOffset := fyne.NewPos(10, 10) // half of assumed cell size
 	r.editor.handleStartPos = startPos.Add(cellOffset)
 	r.editor.handleEndPos = endPos.Add(cellOffset)
-
+	// Shift handles up/down slightly
+	offsetY := float32(20) // pixels
+	r.editor.handleStartPos = startPos.Add(fyne.NewPos(0, offsetY))
+	r.editor.handleEndPos = endPos.Add(fyne.NewPos(0, offsetY))
 	// Position the circles (centered at the calculated points)
-	r.handleStart.Move(r.editor.handleStartPos.Subtract(fyne.NewPos(handleRadius, handleRadius)))
-	r.handleEnd.Move(r.editor.handleEndPos.Subtract(fyne.NewPos(handleRadius, handleRadius)))
+	r.handleStart.Move(r.editor.handleStartPos.Subtract(fyne.NewPos(handleVisualRadius, handleVisualRadius)))
+	r.handleEnd.Move(r.editor.handleEndPos.Subtract(fyne.NewPos(handleVisualRadius, handleVisualRadius)))
 
 	r.handleStart.Show()
 	r.handleEnd.Show()

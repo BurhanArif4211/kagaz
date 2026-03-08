@@ -6,11 +6,47 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+// distance between two points
+func distance(p1, p2 fyne.Position) float64 {
+	dx := p1.X - p2.X
+	dy := p1.Y - p2.Y
+	return float64(dx*dx + dy*dy)
+}
+
+// handleAtPosition returns 1 if pos is near start handle, 2 if near end handle, else 0.
+func (e *NoteEditor) handleAtPosition(pos fyne.Position) int {
+	if !e.showHandles {
+		return 0
+	}
+	// Use squared distance to avoid sqrt
+	dx := pos.X - e.handleStartPos.X
+	dy := pos.Y - e.handleStartPos.Y
+	if dx*dx+dy*dy <= handleHitRadius*handleHitRadius {
+		return 1
+	}
+	dx = pos.X - e.handleEndPos.X
+	dy = pos.Y - e.handleEndPos.Y
+	if dx*dx+dy*dy <= handleHitRadius*handleHitRadius {
+		return 2
+	}
+	return 0
+}
+
 // Tapped moves the cursor to the tapped position.
 func (e *NoteEditor) Tapped(ev *fyne.PointEvent) {
+	// Check if tapping near a handle
+	if handle := e.handleAtPosition(ev.Position); handle != 0 {
+		e.draggingHandle = handle
+		// Do not clear selection or move cursor
+		return
+	}
+
+	// Normal tap: set cursor, clear selection, hide handles
 	row, col := e.grid.CursorLocationForPosition(ev.Position)
 	e.cursor = e.rowColToIndex(row, col)
-	e.selStart = -1 // clear selection
+	e.selStart = -1
+	e.selEnd = -1
+	e.draggingHandle = 0
 	if c := fyne.CurrentApp().Driver().CanvasForObject(e); c != nil {
 		c.Focus(e)
 	}
@@ -19,13 +55,48 @@ func (e *NoteEditor) Tapped(ev *fyne.PointEvent) {
 
 // Dragged handles selection.
 func (e *NoteEditor) Dragged(ev *fyne.DragEvent) {
-	// For prototype, we'll treat any drag as selection (simplified).
-	// In a real app, you'd differentiate scroll vs selection.
+	// If we are dragging a handle
+	if e.draggingHandle != 0 {
+		row, col := e.grid.CursorLocationForPosition(ev.Position)
+		pos := e.rowColToIndex(row, col)
+
+		// Update the appropriate endpoint
+		if e.draggingHandle == 1 { // start handle
+			if pos < e.selEnd {
+				e.selStart = pos
+			} else {
+				// If dragged past end, swap handles
+				e.selStart, e.selEnd = e.selEnd, pos
+				e.draggingHandle = 2 // now dragging becomes the end handle
+			}
+		} else { // end handle
+			if pos > e.selStart {
+				e.selEnd = pos
+			} else {
+				// If dragged before start, swap
+				e.selEnd, e.selStart = e.selStart, pos
+				e.draggingHandle = 1
+			}
+		}
+
+		e.cursor = pos // optional: move cursor to handle position
+		e.Refresh()
+		return
+	}
+
+	// Not dragging a handle → check if we just started dragging near a handle
+	// This can happen if the user taps on a handle and immediately drags without a separate Tapped event
+	if handle := e.handleAtPosition(ev.Position); handle != 0 {
+		e.draggingHandle = handle
+		// Now treat as handle drag (we'll re-enter Dragged on next move)
+		return
+	}
+
+	// Normal selection drag
 	row, col := e.grid.CursorLocationForPosition(ev.Position)
 	newPos := e.rowColToIndex(row, col)
 
 	if e.selStart < 0 {
-		// Start a new selection
 		e.selStart = e.cursor
 	}
 	e.selEnd = newPos
@@ -35,9 +106,20 @@ func (e *NoteEditor) Dragged(ev *fyne.DragEvent) {
 	e.Refresh()
 }
 
-// DragEnd completes the selection.
 func (e *NoteEditor) DragEnd() {
-	// Nothing needed; selection remains.
+	if e.draggingHandle != 0 {
+		// Finished dragging a handle: show menu near the end handle
+		e.draggingHandle = 0
+		if e.showHandles {
+			e.showContextMenu(e.handleEndPos)
+		}
+	} else if e.selStart >= 0 && e.selEnd > e.selStart {
+		// No handle drag, but we have a selection (long press without move)
+		// Show menu near the end handle
+		if e.showHandles {
+			e.showContextMenu(e.handleEndPos)
+		}
+	}
 }
 
 // TappedSecondary (long press) selects the word under the finger and shows the context menu.
@@ -58,9 +140,7 @@ func (e *NoteEditor) TappedSecondary(ev *fyne.PointEvent) {
 	}
 
 	e.Refresh()
-
-	// Show context menu
-	e.showContextMenu(ev.AbsolutePosition)
+	// Do NOT show context menu here – it will be shown in DragEnd.
 }
 
 // expandToWord returns the start and end indices of the word containing pos.

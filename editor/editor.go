@@ -28,7 +28,10 @@ type NoteEditor struct {
 	draggingHandle int // 0=none, 1=start, 2=end
 }
 
-const handleRadius = 20 // pixels for hit detection
+const (
+	handleVisualRadius = 5  // visual size in pixels
+	handleHitRadius    = 35 // hit detection radius (larger for easier touch)
+)
 
 func NewNoteEditor() *NoteEditor {
 	e := &NoteEditor{
@@ -54,16 +57,12 @@ func (e *NoteEditor) SetContent(segments []TextSegment) {
 }
 
 func (e *NoteEditor) CreateRenderer() fyne.WidgetRenderer {
-	handleStart := canvas.NewCircle(theme.PrimaryColor())
-	handleStart.StrokeWidth = 2
-	handleStart.StrokeColor = theme.BackgroundColor()
-	handleStart.Resize(fyne.NewSize(handleRadius, handleRadius))
+	handleStart := canvas.NewCircle(theme.Color(theme.ColorNamePrimary))
+	handleStart.Resize(fyne.NewSize(handleVisualRadius*2, handleVisualRadius*2))
 	handleStart.Hide()
 
-	handleEnd := canvas.NewCircle(theme.PrimaryColor())
-	handleEnd.StrokeWidth = 2
-	handleEnd.StrokeColor = theme.BackgroundColor()
-	handleEnd.Resize(fyne.NewSize(handleRadius, handleRadius))
+	handleEnd := canvas.NewCircle(theme.Color(theme.ColorNamePrimary))
+	handleEnd.Resize(fyne.NewSize(handleVisualRadius*2, handleVisualRadius*2))
 	handleEnd.Hide()
 
 	return &noteEditorRenderer{
